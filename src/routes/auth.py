@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordRequestForm
 from jose import JWTError
-from models.user import UserCreate, UserOut, Token
+from models.user import UserCreate, UserInDB, UserOut, Token
 from pymongo.collection import Collection
 from db.mongo import get_user_collection
 from core.security import verify_password, hash_password, create_access_token, decode_access_token
@@ -32,13 +32,19 @@ async def register(user: UserCreate, users: Collection = Depends(get_user_collec
     result = await users.find_one({"email": user.email})
     if result:
         raise HTTPException(status_code=400, detail="Email already registered")
-    hashed_pw = hash_password(user.password)
-    await users.insert_one({"email": user.email, "hashed_password": hashed_pw})
+    user_in_db = UserInDB(
+        email = user.email,
+        hashed_password = hash_password(user.password),
+        password = ""
+    )
+    await users.insert_one(user_in_db)
     return {"email": user.email}
 
 
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), users: Collection = Depends(get_user_collection)):
+    # form_data.username actually contains the user's email address because OAuth2PasswordRequestForm just names 
+    #   it that way.
     user = await users.find_one({"email": form_data.username})
     if not user or not verify_password(form_data.password, user["hashed_password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
